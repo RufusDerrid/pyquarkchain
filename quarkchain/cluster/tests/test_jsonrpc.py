@@ -236,7 +236,7 @@ class TestJSONRPC(unittest.TestCase):
 
             self.assertTrue(send_request("addBlock", "0x2", response["blockData"]))
             self.assertEqual(
-                clusters[0].get_shard_state(1).get_balance(acc3.recipient), 0
+                clusters[0].get_shard_state(1).get_balance(acc3.recipient, 0), 0
             )
 
             # Expect to mine shard 1 due to proof-of-progress
@@ -263,7 +263,7 @@ class TestJSONRPC(unittest.TestCase):
 
             send_request("addBlock", "0x0", response["blockData"])
             self.assertEqual(
-                clusters[0].get_shard_state(1).get_balance(acc3.recipient), 0
+                clusters[0].get_shard_state(1).get_balance(acc3.recipient, 0), 0
             )
 
             # Expect to mine shard 1 for the gas on xshard tx to acc3
@@ -408,7 +408,9 @@ class TestJSONRPC(unittest.TestCase):
 
             branch = Branch.create(2, 0)
             response = send_request(
-                "call", [{"to": "0x" + acc1.serialize().hex(), "gas": hex(21000)}]
+                "call",
+                {"to": "0x" + acc1.serialize().hex(), "gas": hex(21000)},
+                "latest",
             )
 
             self.assertEqual(response, "0x")
@@ -735,7 +737,7 @@ class TestJSONRPC(unittest.TestCase):
             clusters[0].master
         ):
             response = send_request(
-                "estimateGas", [{"to": "0x" + acc1.serialize().hex()}]
+                "estimateGas", {"to": "0x" + acc1.serialize().hex()}
             )
             self.assertEqual(response, "0x5208")  # 21000
 
@@ -897,7 +899,7 @@ class TestJSONRPC(unittest.TestCase):
                 header_hash_hex = resp[0]
                 _, block = call_async(
                     master.get_next_block_to_mine(
-                        address=master.env.quark_chain_config.miner_address,
+                        address=master.env.quark_chain_config.testnet_master_address,
                         prefer_root=shard_id is None,
                     )
                 )

@@ -111,6 +111,7 @@ def main():
 
     config = ClusterConfig.create_from_args(args)
     print("Cluster config file: {}".format(config.json_filepath))
+    conf = config.to_json()
     print(config.to_json())
 
     os.chdir(os.path.dirname(os.path.abspath(__file__)))

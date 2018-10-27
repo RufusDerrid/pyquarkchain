@@ -73,7 +73,9 @@ class Message(object):
         sender,
         to,
         value=0,
+        transfer_token_id=0,
         gas=1000000,
+        gas_token_id=0,
         data="",
         depth=0,
         code_address=None,
@@ -88,7 +90,9 @@ class Message(object):
         self.sender = sender
         self.to = to
         self.value = value
+        self.transfer_token_id = transfer_token_id
         self.gas = gas
+        self.gas_token_id = gas_token_id
         self.data = (
             CallData(list(map(utils.safe_ord, data)))
             if isinstance(data, (str, bytes))
@@ -486,7 +490,7 @@ def vm_execute(ext, msg, code):
                     if not eat_gas(compustate, opcodes.BALANCE_SUPPLEMENTAL_GAS):
                         return vm_exception("OUT OF GAS")
                 addr = utils.coerce_addr_to_hex(stk.pop() % 2 ** 160)
-                stk.append(ext.get_balance(addr))
+                stk.append(ext.get_balance(addr, 0)) # TODO token_id from where?
             elif op == "ORIGIN":
                 stk.append(utils.coerce_to_int(ext.tx_origin))
             elif op == "CALLER":
@@ -678,7 +682,7 @@ def vm_execute(ext, msg, code):
                 return vm_exception("OOG EXTENDING MEMORY")
             if msg.static:
                 return vm_exception("Cannot CREATE inside a static context")
-            if ext.get_balance(msg.to) >= value and msg.depth < MAX_DEPTH:
+            if ext.get_balance(msg.to, 0) >= value and msg.depth < MAX_DEPTH:  # TODO token_id for contract
                 cd = CallData(mem, mstart, msz)
                 ingas = compustate.gas
                 if ext.post_anti_dos_hardfork():
@@ -687,7 +691,9 @@ def vm_execute(ext, msg, code):
                     msg.to,
                     b"",
                     value,
+                    1, #TODO add transfer_token_id from params
                     ingas,
+                    1, #TODO add gas_token_id from params
                     cd,
                     msg.depth + 1,
                     to_full_shard_id=msg.from_full_shard_id,
@@ -767,7 +773,7 @@ def vm_execute(ext, msg, code):
                     return vm_exception("OUT OF GAS", needed=gas + extra_gas)
             submsg_gas = gas + opcodes.GSTIPEND * (value > 0)
             # Verify that there is sufficient balance and depth
-            if ext.get_balance(msg.to) < value or msg.depth >= MAX_DEPTH:
+            if ext.get_balance(msg.to, msg.transfer_token_id) < value or msg.depth >= MAX_DEPTH:
                 compustate.gas -= gas + extra_gas - submsg_gas
                 stk.append(0)
                 compustate.last_returned = bytearray(b"")
@@ -782,7 +788,9 @@ def vm_execute(ext, msg, code):
                         msg.to,
                         to,
                         value,
+                        1, #TODO add transfer_token_id from params
                         submsg_gas,
+                        1, #TODO add gas_token_id from params
                         cd,
                         msg.depth + 1,
                         code_address=to,
@@ -793,7 +801,9 @@ def vm_execute(ext, msg, code):
                         msg.sender,
                         msg.to,
                         msg.value,
+                        1,  # TODO add transfer_token_id from params
                         submsg_gas,
+                        1,  # TODO add gas_token_id from params
                         cd,
                         msg.depth + 1,
                         code_address=to,
@@ -805,7 +815,9 @@ def vm_execute(ext, msg, code):
                         msg.to,
                         to,
                         value,
+                        1,  # TODO add transfer_token_id from params
                         submsg_gas,
+                        1,  # TODO add gas_token_id from params
                         cd,
                         msg.depth + 1,
                         code_address=to,
@@ -818,7 +830,9 @@ def vm_execute(ext, msg, code):
                         msg.to,
                         msg.to,
                         value,
+                        1,  # TODO add transfer_token_id from params
                         submsg_gas,
+                        1,  # TODO add gas_token_id from params
                         cd,
                         msg.depth + 1,
                         code_address=to,
@@ -857,7 +871,7 @@ def vm_execute(ext, msg, code):
                 return vm_exception("Cannot SUICIDE inside a static context")
             to = utils.encode_int(stk.pop())
             to = ((b"\x00" * (32 - len(to))) + to)[12:]
-            xfer = ext.get_balance(msg.to)
+            xfer = ext.get_balance(msg.to, msg.transfer_token_id)
             if ext.post_anti_dos_hardfork():
                 extra_gas = (
                     opcodes.SUICIDE_SUPPLEMENTAL_GAS
@@ -867,8 +881,8 @@ def vm_execute(ext, msg, code):
                 )
                 if not eat_gas(compustate, extra_gas):
                     return vm_exception("OUT OF GAS")
-            ext.set_balance(to, ext.get_balance(to) + xfer)
-            ext.set_balance(msg.to, 0)
+            ext.set_balance(to, ext.get_balance(to) + xfer, msg.transfer_token_id)
+            ext.set_balance(msg.to, 0, msg.transfer_token_id)
             ext.add_suicide(msg.to)
             log_msg.debug(
                 "SUICIDING",

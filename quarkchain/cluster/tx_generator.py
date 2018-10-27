@@ -122,12 +122,17 @@ class TransactionGenerator:
         if not sample_evm_tx.data:
             value = random.randint(1, 100) * (10 ** 15)
 
+        gas_token_id = 1
+        transfer_token_id = 1
+
         evm_tx = EvmTransaction(
             nonce=nonce,
             gasprice=sample_evm_tx.gasprice,
             startgas=sample_evm_tx.startgas,
+            gas_token_id=gas_token_id,
             to=recipient,
             value=value,
+            transfer_token_id=transfer_token_id,
             data=sample_evm_tx.data,
             from_full_shard_id=from_full_shard_id,
             to_full_shard_id=to_full_shard_id,

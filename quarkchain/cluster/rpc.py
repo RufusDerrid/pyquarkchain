@@ -449,7 +449,7 @@ class GetUnconfirmedHeadersResponse(Serializable):
 
 
 class GetAccountDataRequest(Serializable):
-    FIELDS = [("address", Address), ("block_height", Optional(uint64))]
+    FIELDS = [("address", Address), ("token_id", int), ("block_height", Optional(uint64))]
 
     def __init__(self, address: Address, block_height: typing.Optional[int] = None):
         self.address = address

@@ -72,8 +72,10 @@ def create_transfer_transaction(
     from_address,
     to_address,
     value,
+    transfer_token_id=0,
     gas=21000,  # transfer tx min gas
     gas_price=1,
+    gas_token_id=0,
     nonce=None,
     data=b"",
 ):
@@ -85,8 +87,10 @@ def create_transfer_transaction(
         else nonce,
         gasprice=gas_price,
         startgas=gas,
+        gas_token_id=gas_token_id,
         to=to_address.recipient,
         value=value,
+        transfer_token_id=transfer_token_id,
         data=data,
         from_full_shard_id=from_address.full_shard_id,
         to_full_shard_id=to_address.full_shard_id,

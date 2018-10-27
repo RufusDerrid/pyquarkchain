@@ -5,8 +5,8 @@ from quarkchain.evm.transaction_queue import OrderableTx, TransactionQueue
 
 
 def make_test_tx(s=100000, g=50, data=b'', nonce=0):
-        return Transaction(nonce=nonce, startgas=s, gasprice=g,
-                           value=0, data=data, to=b'\x35' * 20)
+        return Transaction(nonce=nonce, startgas=s, gasprice=g, gas_token_id=0,
+                           value=0, transfer_token_id=0, data=data, to=b'\x35' * 20)
 
 
 class TestTransactionQueue(unittest.TestCase):

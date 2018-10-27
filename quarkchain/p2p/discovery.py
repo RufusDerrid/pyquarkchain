@@ -404,10 +404,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
                 if (not self.ping_callbacks.locked(n) and not self.pong_callbacks.locked(n))
             ))
             if not any(bonded):
-                self.logger.info(
-                    "Failed to bond with bootstrap nodes, we may be the first node, or the bootnodes are not up %s",
-                    self.bootstrap_nodes
-                )
+                self.logger.info("Failed to bond with bootstrap nodes %s", self.bootstrap_nodes)
                 return
             await self.lookup_random()
         except OperationCancelled as e:
@@ -980,12 +977,11 @@ class DiscoveryService(BaseService):
 
     async def maybe_connect_to_more_peers(self) -> None:
         """Connect to more peers if we're not yet maxed out to max_peers"""
-        if self.peer_pool.is_full or self.peer_pool.should_stop_filling():
+        if self.peer_pool.is_full:
             self.logger.debug("Already connected to %s peers; sleeping", len(self.peer_pool))
             return
 
-        if self._last_lookup + self._lookup_interval < time.time():
-            self.run_task(self.maybe_lookup_random_node())
+        self.run_task(self.maybe_lookup_random_node())
 
         await self.peer_pool.connect_to_nodes(
             self.proto.get_nodes_to_connect(self.peer_pool.max_peers))

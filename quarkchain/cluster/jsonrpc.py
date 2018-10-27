@@ -195,7 +195,7 @@ def minor_block_encoder(block, include_transactions=False):
         "nonce": quantity_encoder(header.nonce),
         "hashMerkleRoot": data_encoder(meta.hash_merkle_root),
         "hashEvmStateRoot": data_encoder(meta.hash_evm_state_root),
-        "miner": address_encoder(header.coinbase_address.serialize()),
+        "miner": address_encoder(meta.coinbase_address.serialize()),
         "difficulty": quantity_encoder(header.difficulty),
         "extraData": data_encoder(header.extra_data),
         "gasLimit": quantity_encoder(header.evm_gas_limit),
@@ -615,7 +615,9 @@ class JSONRPCServer:
         to = get_data_default("to", recipient_decoder, b"")
         startgas = get_data_default("gas", quantity_decoder, DEFAULT_STARTGAS)
         gasprice = get_data_default("gasPrice", quantity_decoder, DEFAULT_GASPRICE)
+        gas_token_id = get_data_default("gasTokenId", quantity_decoder, 0)
         value = get_data_default("value", quantity_decoder, 0)
+        transfer_token_id = get_data_default("transfer_token_id", quantity_decoder, 0)
         data_ = get_data_default("data", data_decoder, b"")
         v = get_data_default("v", quantity_decoder, 0)
         r = get_data_default("r", quantity_decoder, 0)
@@ -646,8 +648,10 @@ class JSONRPCServer:
             nonce,
             gasprice,
             startgas,
+            gas_token_id,
             to,
             value,
+            transfer_token_id,
             data_,
             v,
             r,
@@ -742,7 +746,7 @@ class JSONRPCServer:
         )
 
     @public_methods.add
-    async def estimateGas(self, data):
+    async def estimateGas(self, **data):
         return await self._call_or_estimate_gas(is_call=False, **data)
 
     @public_methods.add
@@ -858,16 +862,12 @@ class JSONRPCServer:
     @public_methods.add
     @decode_arg("from_address", address_decoder)
     @decode_arg("to_address", address_decoder)
-    @decode_arg("value", quantity_decoder)
-    async def donate(self, from_address, to_address, value=hex(10 ** 18)):
-        """Faucet function to send value (default 1 token) from from_address to to_address.
+    async def donate(self, from_address, to_address):
+        """Faucet function to send 1 token from from_address to to_address.
         from_address must be one of the addresses in genesis_data/alloc.json.
         Only allow one pending tx at a time.
         Return tx id if success else None
         """
-        if value > 100 * (10 ** 18):
-            return None
-
         key = self.master.env.quark_chain_config.alloc_accounts.get(
             from_address.hex(), None
         )
@@ -894,7 +894,7 @@ class JSONRPCServer:
             10 ** 9,
             30000,
             to_address.recipient,
-            value,
+            1 * (10 ** 18),
             b"",
             from_full_shard_id=from_address.full_shard_id,
             to_full_shard_id=to_address.full_shard_id,
@@ -1077,11 +1077,15 @@ class JSONRPCServer:
         x_shard_percent = load_test_data["xShardPercent"]
         to = get_data_default("to", recipient_decoder, b"")
         startgas = get_data_default("gas", quantity_decoder, DEFAULT_STARTGAS)
-        gasprice = get_data_default(
-            "gasPrice", quantity_decoder, int(DEFAULT_GASPRICE / 10)
-        )
-        value = get_data_default("value", quantity_decoder, 0)
-        data = get_data_default("data", data_decoder, b"")
+        #startgas = 22000
+        gasprice = 1
+        # gasprice = get_data_default(
+        #     "gasPrice", quantity_decoder, int(DEFAULT_GASPRICE / 10)
+        # )
+        gas_token_id = 1
+        value = get_data_default("value", quantity_decoder, 1)
+        transfer_token_id = 1
+        data = get_data_default("data", data_decoder, b"b")
         # FIXME: can't support specifying full shard ID to 0. currently is regarded as not set
         from_full_shard_id = get_data_default(
             "fromFullShardId", full_shard_id_decoder, 0
@@ -1091,8 +1095,10 @@ class JSONRPCServer:
             0,
             gasprice,
             startgas,
+            gas_token_id,
             to,
             value,
+            transfer_token_id,
             data,
             from_full_shard_id=from_full_shard_id,
         )
@@ -1183,7 +1189,9 @@ class JSONRPCServer:
 
         gas = get_data_default("gas", quantity_decoder, 0)
         gas_price = get_data_default("gasPrice", quantity_decoder, 0)
+        gas_token_id = 1
         value = get_data_default("value", quantity_decoder, 0)
+        transfer_token_id = 1
         data_ = get_data_default("data", data_decoder, b"")
         sender = get_data_default("from", address_decoder, b"\x00" * 20 + to[20:])
         sender_address = Address.create_from(sender)
@@ -1195,8 +1203,10 @@ class JSONRPCServer:
             nonce,
             gas_price,
             gas,
+            gas_token_id,
             to[:20],
             value,
+            transfer_token_id,
             data_,
             from_full_shard_id=sender_address.full_shard_id,
             to_full_shard_id=to_full_shard_id,

@@ -89,8 +89,10 @@ def compute_state_test_unit(state, txdata, indices, konfig):
             gasprice=parse_int_or_hex(txdata['gasPrice'] or b"0"),
             startgas=parse_int_or_hex(
                 txdata['gasLimit'][indices["gas"]] or b"0"),
+            gas_token_id=1,
             to=decode_hex(remove_0x_head(txdata['to'])),
             value=parse_int_or_hex(txdata['value'][indices["value"]] or b"0"),
+            transfer_token_id=1,
             data=decode_hex(remove_0x_head(txdata['data'][indices["data"]])))
         if 'secretKey' in txdata:
             tx.sign(decode_hex(remove_0x_head(txdata['secretKey'])))
@@ -141,7 +143,7 @@ def init_state(env, pre):
         address = decode_hex(remove_0x_head(address))
         assert set(h.keys()) == set(['code', 'nonce', 'balance', 'storage'])
         state.set_nonce(address, parse_int_or_hex(h['nonce']))
-        state.set_balance(address, parse_int_or_hex(h['balance']))
+        state.set_balance(address, parse_int_or_hex(h['balance']), 0)  #TODO get token_id from pre items
         state.set_code(address, decode_hex(remove_0x_head(h['code'])))
         for k, v in h['storage'].items():
             state.set_storage_data(address,

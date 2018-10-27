@@ -143,11 +143,11 @@ class BasePeerContext:
 
 class BasePeer(BaseService):
     conn_idle_timeout = CONN_IDLE_TIMEOUT
-    peer_idle_timeout = CONN_IDLE_TIMEOUT  # override this for connected peer
     # Must be defined in subclasses. All items here must be Protocol classes representing
     # different versions of the same P2P sub-protocol (e.g. ETH, LES, etc).
     _supported_sub_protocols = []  # : List[Type[protocol.Protocol]]
-
+    # FIXME: Must be configurable.
+    listen_port = 30303
     # Will be set upon the successful completion of a P2P handshake.
     sub_proto = None  # : protocol.Protocol
 
@@ -159,7 +159,6 @@ class BasePeer(BaseService):
         context: BasePeerContext,
         inbound: bool = False,
         token: CancelToken = None,
-        listen_port: int = 30303,
     ) -> None:
         super().__init__(token)
 
@@ -212,9 +211,6 @@ class BasePeer(BaseService):
 
         # Manages the boot process
         self.boot_manager = self.get_boot_manager()
-
-        # this port is not really used on the other side of TCP communication, py-evm had this wrong but it does not matter
-        self.listen_port = listen_port
 
     def get_extra_stats(self) -> List[str]:
         return []
@@ -269,19 +265,17 @@ class BasePeer(BaseService):
         Raises HandshakeFailure if the handshake is not successful.
         """
         await self.send_sub_proto_handshake()
-        cmd, msg = await self.read_msg(timeout=self.conn_idle_timeout)
+        cmd, msg = await self.read_msg()
         if isinstance(cmd, Ping):
             # Parity sends a Ping before the sub-proto handshake, so respond to that and read the
             # next one, which hopefully will be the actual handshake.
             self.base_protocol.send_pong()
-            cmd, msg = await self.read_msg(timeout=self.conn_idle_timeout)
+            cmd, msg = await self.read_msg()
         if isinstance(cmd, Disconnect):
             msg = cast(Dict[str, Any], msg)
             # Peers sometimes send a disconnect msg before they send the sub-proto handshake.
             raise HandshakeFailure(
-                "{} disconnected before completing sub-proto handshake: {}".format(
-                    self, msg["reason_name"]
-                )
+                "{} disconnected before completing sub-proto handshake: {}".format(self, msg['reason_name'])
             )
         await self.process_sub_proto_handshake(cmd, msg)
         self.logger.debug("Finished %s handshake with %s", self.sub_proto, self.remote)
@@ -294,7 +288,7 @@ class BasePeer(BaseService):
         self.base_protocol.send_handshake()
 
         try:
-            cmd, msg = await self.read_msg(timeout=self.conn_idle_timeout)
+            cmd, msg = await self.read_msg()
         except rlp.DecodingError:
             raise HandshakeFailure("Got invalid rlp data during handshake")
         except MalformedMessage as e:
@@ -304,9 +298,7 @@ class BasePeer(BaseService):
             msg = cast(Dict[str, Any], msg)
             # Peers sometimes send a disconnect msg before they send the initial P2P handshake.
             raise HandshakeFailure(
-                "{} disconnected before completing sub-proto handshake: {}".format(
-                    self, msg["reason_name"]
-                )
+                "{} disconnected before completing sub-proto handshake: {}".format(self, msg['reason_name'])
             )
         await self.process_p2p_handshake(cmd, msg)
 
@@ -323,14 +315,14 @@ class BasePeer(BaseService):
         elif cmd_id < self.sub_proto.cmd_id_offset + self.sub_proto.cmd_length:
             return self.sub_proto.cmd_by_id[cmd_id]
         else:
-            raise UnknownProtocolCommand(
-                "No protocol found for cmd_id {}".format(cmd_id)
-            )
+            raise UnknownProtocolCommand("No protocol found for cmd_id {}".format(cmd_id))
 
-    async def read(self, n: int, timeout: int) -> bytes:
+    async def read(self, n: int) -> bytes:
         self.logger.debug("Waiting for %s bytes from %s", n, self.remote)
         try:
-            return await self.wait(self.reader.readexactly(n), timeout=timeout)
+            return await self.wait(
+                self.reader.readexactly(n), timeout=self.conn_idle_timeout
+            )
         except (
             asyncio.IncompleteReadError,
             ConnectionResetError,
@@ -364,7 +356,7 @@ class BasePeer(BaseService):
         self.run_child_service(self.boot_manager)
         while self.is_operational:
             try:
-                cmd, msg = await self.read_msg(timeout=self.peer_idle_timeout)
+                cmd, msg = await self.read_msg()
             except (PeerConnectionLost, TimeoutError) as err:
                 self.logger.debug(
                     "%s stopped responding (%r), disconnecting", self.remote, err
@@ -388,14 +380,14 @@ class BasePeer(BaseService):
                 self.logger.debug("%r disconnected: %s", self, e)
                 return
 
-    async def read_msg(self, timeout) -> Tuple[protocol.Command, protocol.PayloadType]:
-        header_data = await self.read(HEADER_LEN + MAC_LEN, timeout=timeout)
+    async def read_msg(self) -> Tuple[protocol.Command, protocol.PayloadType]:
+        header_data = await self.read(HEADER_LEN + MAC_LEN)
         header = self.decrypt_header(header_data)
         frame_size = self.get_frame_size(header)
         # The frame_size specified in the header does not include the padding to 16-byte boundary,
         # so need to do this here to ensure we read all the frame's data.
         read_size = roundup_16(frame_size)
-        frame_data = await self.read(read_size + MAC_LEN, timeout=timeout)
+        frame_data = await self.read(read_size + MAC_LEN)
         msg = self.decrypt_body(frame_data, frame_size)
         cmd = self.get_protocol_command_for(msg)
         # NOTE: This used to be a bottleneck but it doesn't seem to be so anymore. If we notice
@@ -464,18 +456,14 @@ class BasePeer(BaseService):
         msg = cast(Dict[str, Any], msg)
         if not isinstance(cmd, Hello):
             await self.disconnect(DisconnectReason.bad_protocol)
-            raise HandshakeFailure(
-                "Expected a Hello msg, got {}, disconnecting".format(cmd)
-            )
+            raise HandshakeFailure("Expected a Hello msg, got {}, disconnecting".format(cmd))
         remote_capabilities = msg["capabilities"]
         try:
             self.sub_proto = self.select_sub_protocol(remote_capabilities)
         except NoMatchingPeerCapabilities:
             await self.disconnect(DisconnectReason.useless_peer)
             raise HandshakeFailure(
-                "No matching capabilities between us ({}) and {} ({}), disconnecting".format(
-                    self.capabilities, self.remote, remote_capabilities
-                )
+                "No matching capabilities between us ({}) and {} ({}), disconnecting".format(self.capabilities, self.remote, remote_capabilities)
             )
         self.logger.debug(
             "Finished P2P handshake with %s, using sub-protocol %s",
@@ -505,9 +493,7 @@ class BasePeer(BaseService):
     def decrypt_header(self, data: bytes) -> bytes:
         if len(data) != HEADER_LEN + MAC_LEN:
             raise ValueError(
-                "Unexpected header length: {}, expected {} + {}".format(
-                    len(data), HEADER_LEN, MAC_LEN
-                )
+                "Unexpected header length: {}, expected {} + {}".format(len(data), HEADER_LEN, MAC_LEN)
             )
 
         header_ciphertext = data[:HEADER_LEN]
@@ -518,9 +504,7 @@ class BasePeer(BaseService):
         expected_header_mac = self.ingress_mac.digest()[:HEADER_LEN]
         if not bytes_eq(expected_header_mac, header_mac):
             raise DecryptionError(
-                "Invalid header mac: expected {}, got {}".format(
-                    expected_header_mac, header_mac
-                )
+                "Invalid header mac: expected {}, got {}".format(expected_header_mac, header_mac)
             )
         return self.aes_dec.update(header_ciphertext)
 
@@ -528,9 +512,7 @@ class BasePeer(BaseService):
         read_size = roundup_16(body_size)
         if len(data) < read_size + MAC_LEN:
             raise ValueError(
-                "Insufficient body length; Got {}, wanted {} + {}".format(
-                    len(data), read_size, MAC_LEN
-                )
+                "Insufficient body length; Got {}, wanted {} + {}".format(len(data), read_size, MAC_LEN)
             )
 
         frame_ciphertext = data[:read_size]
@@ -542,9 +524,7 @@ class BasePeer(BaseService):
         expected_frame_mac = self.ingress_mac.digest()[:MAC_LEN]
         if not bytes_eq(expected_frame_mac, frame_mac):
             raise DecryptionError(
-                "Invalid frame mac: expected {}, got {}".format(
-                    expected_frame_mac, frame_mac
-                )
+                "Invalid frame mac: expected {}, got {}".format(expected_frame_mac, frame_mac)
             )
         return self.aes_dec.update(frame_ciphertext)[:body_size]
 
@@ -767,12 +747,10 @@ class BasePeerFactory(ABC):
         privkey: datatypes.PrivateKey,
         context: BasePeerContext,
         token: CancelToken,
-        listen_port: int,
     ) -> None:
         self.privkey = privkey
         self.context = context
         self.cancel_token = token
-        self.listen_port = listen_port
 
     def create_peer(
         self, remote: Node, connection: PeerConnection, inbound: bool = False
@@ -784,7 +762,6 @@ class BasePeerFactory(ABC):
             context=self.context,
             inbound=inbound,
             token=self.cancel_token,
-            listen_port=self.listen_port,
         )
 
 
@@ -795,13 +772,11 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
 
     _report_interval = 60
     _peer_boot_timeout = DEFAULT_PEER_BOOT_TIMEOUT
-    _fill_pool_ratio = 0.65 # only proactively fill peer pool to _fill_pool_ratio*max_peers
 
     def __init__(
         self,
         privkey: datatypes.PrivateKey,
         context: BasePeerContext,
-        listen_port: int,
         max_peers: int = DEFAULT_MAX_PEERS,
         token: CancelToken = None,
         event_bus=None,
@@ -818,8 +793,6 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
         if self.event_bus is not None:
             # self.run_task(self.handle_peer_count_requests())
             pass
-        self.listen_port = listen_port
-        self.dialedout_pubkeys = set()  # type: Set[datatypes.PublicKey]
 
     # async def handle_peer_count_requests(self) -> None:
     #     async def f() -> None:
@@ -844,18 +817,12 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
 
     def get_peer_factory(self) -> BasePeerFactory:
         return self.peer_factory_class(
-            privkey=self.privkey,
-            context=self.context,
-            token=self.cancel_token,
-            listen_port=self.listen_port,
+            privkey=self.privkey, context=self.context, token=self.cancel_token
         )
 
     @property
     def is_full(self) -> bool:
         return len(self) >= self.max_peers
-
-    def should_stop_filling(self) -> bool:
-        return len(self) >= self.max_peers * self._fill_pool_ratio
 
     def is_valid_connection_candidate(self, candidate: Node) -> bool:
         # connect to no more then 2 nodes with the same IP
@@ -933,14 +900,6 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
         Connect to the given remote and return a Peer instance when successful.
         Returns None if the remote is unreachable, times out or is useless.
         """
-        if remote.pubkey == self.privkey.public_key:
-            Logger.warning_every_n(
-                "Skipping {} that has the same public key as local node, quite possible we are trying to connect to ourselves".format(
-                    remote
-                ),
-                100,
-            )
-            return None
         if remote in self.connected_nodes:
             self.logger.debug("Skipping %s; already connected to it", remote)
             return None
@@ -982,17 +941,6 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
             )
         return None
 
-    @contextlib.contextmanager
-    def dialout_registry(self, pubkey: datatypes.PublicKey) -> Iterator[None]:
-        """
-        register all dialed out connections to prevent double connection
-        """
-        self.dialedout_pubkeys.add(pubkey)
-        try:
-            yield
-        finally:
-            self.dialedout_pubkeys.remove(pubkey)
-
     async def connect_to_nodes(self, nodes: Iterator[Node]) -> None:
         for node in nodes:
             if self.is_full:
@@ -1001,10 +949,9 @@ class BasePeerPool(BaseService, AsyncIterable[BasePeer]):
             # TODO: Consider changing connect() to raise an exception instead of returning None,
             # as discussed in
             # https://github.com/ethereum/py-evm/pull/139#discussion_r152067425
-            with self.dialout_registry(node.pubkey):
-                peer = await self.connect(node)
-                if peer is not None:
-                    await self.start_peer(peer)
+            peer = await self.connect(node)
+            if peer is not None:
+                await self.start_peer(peer)
 
     def _peer_finished(self, peer: BaseService) -> None:
         """Remove the given peer from our list of connected nodes.

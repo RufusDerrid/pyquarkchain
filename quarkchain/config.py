@@ -58,6 +58,8 @@ class RootGenesis(BaseConfig):
     VERSION = 0
     HEIGHT = 0
     SHARD_SIZE = 32
+    COINBASE_ADDRESS = bytes(24).hex()
+    COINBASE_AMOUNT = 5
     HASH_PREV_BLOCK = bytes(32).hex()
     HASH_MERKLE_ROOT = bytes(32).hex()
     # 2018/2/2 5 am 7 min 38 sec
@@ -70,6 +72,8 @@ class ShardGenesis(BaseConfig):
     ROOT_HEIGHT = 0  # hash_prev_root_block should be the root block of this height
     VERSION = 0
     HEIGHT = 0
+    COINBASE_ADDRESS = bytes(24).hex()
+    COINBASE_AMOUNT = 5
     HASH_PREV_MINOR_BLOCK = bytes(32).hex()
     HASH_MERKLE_ROOT = bytes(32).hex()
     EXTRA_DATA = b"It was the best of times, it was the worst of times, ... - Charles Dickens".hex()
@@ -108,10 +112,7 @@ class ShardConfig(BaseConfig):
     CONSENSUS_TYPE = ConsensusType.NONE
     # Only set when CONSENSUS_TYPE is not NONE
     CONSENSUS_CONFIG = None  # type: POWConfig
-    GENESIS = None  # type: ShardGenesis
-
-    COINBASE_ADDRESS = bytes(24).hex()
-    COINBASE_AMOUNT = 5
+    GENESIS = None  # ShardGenesis
 
     # Gas Limit
     GAS_LIMIT_EMA_DENOMINATOR = 1024
@@ -188,10 +189,7 @@ class RootConfig(BaseConfig):
     CONSENSUS_TYPE = ConsensusType.NONE  # type: ConsensusType
     # Only set when CONSENSUS_TYPE is not NONE
     CONSENSUS_CONFIG = None  # type: POWConfig
-    GENESIS = None  # type: RootGenesis
-
-    COINBASE_ADDRESS = bytes(24).hex()
-    COINBASE_AMOUNT = 5
+    GENESIS = None  # RootGenesis
 
     def __init__(self):
         self.GENESIS = RootGenesis()
@@ -234,6 +232,7 @@ class QuarkChainConfig(BaseConfig):
     BLOCK_EXTRA_DATA_SIZE_LIMIT = 1024
 
     PROOF_OF_PROGRESS_BLOCKS = 1
+    TESTNET_MASTER_ADDRESS = "199bcc2ebf71a851e388bd926595376a49bdaa329c6485f3"
     GUARDIAN_PUBLIC_KEY = "00" * 64  # TODO: update this
 
     # P2P
@@ -246,10 +245,6 @@ class QuarkChainConfig(BaseConfig):
 
     ROOT = None  # type: RootConfig
     SHARD_LIST = None
-
-    # On mining rewards
-    MINER_ADDRESS = "199bcc2ebf71a851e388bd926595376a49bdaa329c6485f3"
-    REWARD_TAX_RATE = 0.5  # percentage of rewards should go to root block mining
 
     def __init__(self):
         self.loadtest_accounts = []  # for TransactionGenerator
@@ -286,8 +281,8 @@ class QuarkChainConfig(BaseConfig):
         return ids
 
     @property
-    def miner_address(self):
-        return Address.create_from(self.MINER_ADDRESS)
+    def testnet_master_address(self):
+        return Address.create_from(self.TESTNET_MASTER_ADDRESS)
 
     @property
     def guardian_public_key(self) -> KeyAPI.PublicKey:
@@ -311,7 +306,9 @@ class QuarkChainConfig(BaseConfig):
             s.CONSENSUS_TYPE = ConsensusType.POW_SIMULATE
             s.CONSENSUS_CONFIG = POWConfig()
             s.CONSENSUS_CONFIG.TARGET_BLOCK_TIME = minor_block_time
-            s.COINBASE_ADDRESS = Address.create_empty_account(i).serialize().hex()
+            s.GENESIS.COINBASE_ADDRESS = (
+                Address.create_empty_account(i).serialize().hex()
+            )
             self.SHARD_LIST.append(s)
 
     def to_dict(self):

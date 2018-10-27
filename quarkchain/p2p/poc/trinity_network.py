@@ -1,10 +1,3 @@
-"""
-Example runs:
-
-python trinity_node_network.py --num_apps=10
-# or
-python trinity_node_network.py --num_apps=100
-"""
 import argparse
 import asyncio
 import json
@@ -16,16 +9,14 @@ from asyncio import subprocess
 PORT = 29000
 
 
-async def run_app(bootnode, privkey, listen_port, max_peers, logging_level):
+async def run_app(bootnode, listen_host, listen_port, max_peers, privkey):
     cmd = (
-        "python trinity_node.py "
+        "python trinity_app.py "
         "--bootnode={} "
-        "--privkey={} "
+        "--listen_host={} "
         "--listen_port={} "
         "--max_peers={} "
-        "--logging_level={}".format(
-            bootnode, privkey, listen_port, max_peers, logging_level
-        )
+        "--privkey={}".format(bootnode, listen_host, listen_port, max_peers, privkey)
     )
     return await asyncio.create_subprocess_exec(
         *cmd.split(" "), stdout=subprocess.PIPE, stderr=subprocess.STDOUT
@@ -41,13 +32,12 @@ async def print_output(prefix, stream):
 
 
 class Network:
-    def __init__(self, num_apps, port_start, max_peers, logging_level):
+    def __init__(self, num_apps, port_start, max_peers):
         self.num_apps = num_apps
         self.port_start = port_start
         self.max_peers = max_peers
         self.procs = []
         self.shutdown_called = False
-        self.logging_level = logging_level
 
     async def wait_and_shutdown(self, prefix, proc):
         await proc.wait()
@@ -63,10 +53,10 @@ class Network:
         )
         s = await run_app(
             bootnode=bootnode,
-            privkey="31552f186bf90908ce386fb547dd0410bf443309125cc43fd0ffd642959bf6d9",
+            listen_host="127.0.0.1",
             listen_port=self.port_start,
             max_peers=self.max_peers,
-            logging_level=self.logging_level,
+            privkey="31552f186bf90908ce386fb547dd0410bf443309125cc43fd0ffd642959bf6d9",
         )
         prefix = "APP_{}".format(0)
         asyncio.ensure_future(print_output(prefix, s.stdout))
@@ -75,10 +65,10 @@ class Network:
         for id in range(1, self.num_apps):
             s = await run_app(
                 bootnode=bootnode,
-                privkey="",
+                listen_host="127.0.0.1",
                 listen_port=self.port_start + id,
                 max_peers=self.max_peers,
-                logging_level=self.logging_level,
+                privkey="",
             )
             prefix = "APP_{}".format(id)
             asyncio.ensure_future(print_output(prefix, s.stdout))
@@ -113,15 +103,11 @@ def main():
     parser.add_argument("--num_apps", default=10, type=int)
     parser.add_argument("--port_start", default=PORT, type=int)
     parser.add_argument("--max_peers", default=25, type=int)
-    parser.add_argument("--logging_level", default="info", type=str)
 
     args = parser.parse_args()
 
     network = Network(
-        num_apps=args.num_apps,
-        port_start=args.port_start,
-        max_peers=args.max_peers,
-        logging_level=args.logging_level,
+        num_apps=args.num_apps, port_start=args.port_start, max_peers=args.max_peers
     )
     network.start_and_loop()
 

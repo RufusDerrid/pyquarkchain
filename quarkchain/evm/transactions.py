@@ -55,8 +55,10 @@ class Transaction(rlp.Serializable):
         ('nonce', big_endian_int),
         ('gasprice', big_endian_int),
         ('startgas', big_endian_int),
+        ('gas_token_id', big_endian_int),
         ('to', utils.address),
         ('value', big_endian_int),
+        ('transfer_token_id', big_endian_int),
         ('data', binary),
         ('from_full_shard_id', BigEndianInt(4)),
         ('to_full_shard_id', BigEndianInt(4)),
@@ -69,7 +71,7 @@ class Transaction(rlp.Serializable):
 
     _sender = None
 
-    def __init__(self, nonce, gasprice, startgas, to, value, data,
+    def __init__(self, nonce, gasprice, startgas, gas_token_id, to, value, transfer_token_id, data,
                  v=0, r=0, s=0, from_full_shard_id=0, to_full_shard_id=0, network_id=1, version=0):
         self.shard_size = 0
 
@@ -81,8 +83,10 @@ class Transaction(rlp.Serializable):
             nonce,
             gasprice,
             startgas,
+            gas_token_id,
             to,
             value,
+            transfer_token_id,
             data,
             from_full_shard_id,
             to_full_shard_id,
@@ -236,8 +240,10 @@ def unsigned_tx_from_tx(tx):
         nonce=tx.nonce,
         gasprice=tx.gasprice,
         startgas=tx.startgas,
+        gas_token_id=tx.gas_token_id,
         to=tx.to,
         value=tx.value,
+        transfer_token_id=tx.transfer_token_id,
         data=tx.data,
         from_full_shard_id=tx.from_full_shard_id,
         to_full_shard_id=tx.to_full_shard_id,

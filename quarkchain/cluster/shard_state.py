@@ -218,8 +218,10 @@ class ShardState:
                 nonce,
                 evm_tx.gasprice,
                 gas if gas else evm_tx.startgas,  # override gas if specified
+                evm_tx.gas_token_id,
                 evm_tx.to,
                 evm_tx.value,
+                evm_tx.transfer_token_id,
                 evm_tx.data,
                 from_full_shard_id=evm_tx.from_full_shard_id,
                 to_full_shard_id=evm_tx.to_full_shard_id,
@@ -275,6 +277,7 @@ class ShardState:
         evm_state = self.evm_state.ephemeral_clone()
         evm_state.gas_used = 0
         try:
+            Logger.warning("add_tx")
             evm_tx = self.__validate_tx(tx, evm_state)
             self.tx_queue.add_transaction(evm_tx)
             self.tx_dict[tx_hash] = tx
@@ -298,7 +301,7 @@ class ShardState:
         ] = []  # TODO [x.hash for x in block.uncles]
         # TODO: Create a account with shard info if the account is not created
         # Right now the full_shard_id for coinbase actually comes from the first tx that got applied
-        state.block_coinbase = block.header.coinbase_address.recipient
+        state.block_coinbase = block.meta.coinbase_address.recipient
         state.block_difficulty = block.header.difficulty
         state.block_reward = 0
         state.prev_headers = []  # TODO: state.add_block_header(block.header)
@@ -464,7 +467,7 @@ class ShardState:
             raise ValueError("incorrect merkle root")
 
         # Check the first transaction of the block
-        if not self.branch.is_in_shard(block.header.coinbase_address.full_shard_id):
+        if not self.branch.is_in_shard(block.meta.coinbase_address.full_shard_id):
             raise ValueError("coinbase output address must be in the shard")
 
         # Check difficulty
@@ -475,7 +478,7 @@ class ShardState:
             if diff != block.header.difficulty:
                 raise ValueError("incorrect difficulty")
 
-        if not self.branch.is_in_shard(block.header.coinbase_address.full_shard_id):
+        if not self.branch.is_in_shard(block.meta.coinbase_address.full_shard_id):
             raise ValueError("coinbase output must be in local shard")
 
         # Check whether the root header is in the root chain
@@ -543,6 +546,7 @@ class ShardState:
 
         for idx, tx in enumerate(block.tx_list):
             try:
+                Logger.warning("run_block")
                 evm_tx = self.__validate_tx(tx, evm_state)
                 evm_tx.set_shard_size(self.branch.get_shard_size())
                 apply_transaction(evm_state, evm_tx, tx.get_hash())
@@ -557,8 +561,8 @@ class ShardState:
                 raise e
 
         # Put only half of block fee to coinbase address
-        check(evm_state.get_balance(evm_state.block_coinbase) >= evm_state.block_fee)
-        evm_state.delta_balance(evm_state.block_coinbase, -evm_state.block_fee // 2)
+        check(evm_state.get_balance(evm_state.block_coinbase, 0) >= evm_state.block_fee) # TODO get token_id from state
+        evm_state.delta_balance(evm_state.block_coinbase, -evm_state.block_fee // 2, 0) # TODO get token_id from state
 
         # Update actual root hash
         evm_state.commit()
@@ -707,8 +711,7 @@ class ShardState:
             raise ValueError("Bloom mismatch")
 
         # TODO: Add block reward to coinbase
-        self.reward_calc.get_block_reward()
-
+        # self.reward_calc.get_block_reward(self):
         self.db.put_minor_block(block, x_shard_receive_tx_list)
 
         # Update tip if a block is appended or a fork is longer (with the same ancestor confirmed by root block tip)
@@ -786,11 +789,11 @@ class ShardState:
         block.finalize(evm_state=self.run_block(block))
         self.add_block(block)
 
-    def get_balance(self, recipient: bytes, height: Optional[int] = None) -> int:
+    def get_balance(self, recipient: bytes, token_id: int, height: Optional[int] = None) -> int:
         evm_state = self._get_evm_state_from_height(height)
         if not evm_state:
             return 0
-        return evm_state.get_balance(recipient)
+        return evm_state.get_balance(recipient, token_id)
 
     def get_transaction_count(
         self, recipient: bytes, height: Optional[int] = None
@@ -830,7 +833,9 @@ class ShardState:
         gas = evm_tx.startgas if evm_tx.startgas else state.gas_limit
 
         try:
+            Logger.warning("execute_tx")
             evm_tx = self.__validate_tx(tx, state, from_address, gas)
+            # return None
             success, output = apply_transaction(
                 state, evm_tx, tx_wrapper_hash=bytes(32)
             )
@@ -1003,8 +1008,9 @@ class ShardState:
         self.__add_transactions_to_block(block, evm_state)
 
         # Put only half of block fee to coinbase address
-        check(evm_state.get_balance(evm_state.block_coinbase) >= evm_state.block_fee)
-        evm_state.delta_balance(evm_state.block_coinbase, -evm_state.block_fee // 2)
+        check_balance = evm_state.get_balance(evm_state.block_coinbase, 0) #TODO check token_id
+        check(check_balance >= evm_state.block_fee)
+        evm_state.delta_balance(evm_state.block_coinbase, -evm_state.block_fee // 2, 0) #TODO check token_id
 
         # Update actual root hash
         evm_state.commit()
@@ -1199,6 +1205,7 @@ class ShardState:
                     to_address=r_block.header.coinbase_address,
                     value=r_block.header.coinbase_amount,
                     gas_price=0,
+                    gas_token_id=0 # TODO gas_token_id from block
                 )
             )
         return tx_list
@@ -1207,7 +1214,7 @@ class ShardState:
         tx_list = self.__get_cross_shard_tx_list_by_root_block_hash(r_hash)
 
         for tx in tx_list:
-            evm_state.delta_balance(tx.to_address.recipient, tx.value)
+            evm_state.delta_balance(tx.to_address.recipient, tx.value, tx.gas_token_id)
             evm_state.gas_used = min(
                 evm_state.gas_used
                 + (opcodes.GTXXSHARDCOST if tx.gas_price != 0 else 0),
@@ -1215,7 +1222,7 @@ class ShardState:
             )
             evm_state.block_fee += opcodes.GTXXSHARDCOST * tx.gas_price
             evm_state.delta_balance(
-                evm_state.block_coinbase, opcodes.GTXXSHARDCOST * tx.gas_price
+                evm_state.block_coinbase, opcodes.GTXXSHARDCOST * tx.gas_price, tx.gas_token_id
             )
         evm_state.xshard_receive_gas_used = evm_state.gas_used
 
@@ -1392,6 +1399,7 @@ class ShardState:
             try:
                 evm_state = self.evm_state.ephemeral_clone()  # type: EvmState
                 evm_state.gas_used = 0
+                Logger.warning("run_tx")
                 evm_tx = self.__validate_tx(tx, evm_state, from_address, gas=gas)
                 success, _ = apply_transaction(
                     evm_state, evm_tx, tx_wrapper_hash=bytes(32)
@@ -1402,11 +1410,12 @@ class ShardState:
 
         while lo + 1 < hi:
             mid = (lo + hi) // 2
+            Logger.warning("place1")
             if run_tx(mid):
                 hi = mid
             else:
                 lo = mid
-
+        Logger.warning("place1")
         if hi == cap and not run_tx(hi):
             return None
         return hi

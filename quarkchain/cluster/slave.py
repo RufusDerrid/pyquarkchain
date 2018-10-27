@@ -270,7 +270,7 @@ class MasterConnection(ClusterConnection):
         self, req: GetAccountDataRequest
     ) -> GetAccountDataResponse:
         account_branch_data_list = self.slave_server.get_account_data(
-            req.address, req.block_height
+            req.address, req.token_id, req.block_height
         )
         return GetAccountDataResponse(
             error_code=0, account_branch_data_list=account_branch_data_list
@@ -1053,17 +1053,17 @@ class SlaveServer:
             return None
         return shard.state.get_transaction_count(address.recipient)
 
-    def get_balance(self, address):
+    def get_balance(self, address, token_id):
         branch = Branch.create(
             self.__get_shard_size(), address.get_shard_id(self.__get_shard_size())
         )
         shard = self.shards.get(branch, None)
         if not shard:
             return None
-        return shard.state.get_balance(address.recipient)
+        return shard.state.get_balance(address.recipient, token_id)
 
     def get_account_data(
-        self, address: Address, block_height: Optional[int]
+        self, address: Address, token_id: int, block_height: Optional[int]
     ) -> List[AccountBranchData]:
         results = []
         for branch, shard in self.shards.items():
@@ -1073,7 +1073,7 @@ class SlaveServer:
                     transaction_count=shard.state.get_transaction_count(
                         address.recipient, block_height
                     ),
-                    balance=shard.state.get_balance(address.recipient, block_height),
+                    balance=shard.state.get_balance(address.recipient, token_id, block_height),
                     is_contract=len(
                         shard.state.get_code(address.recipient, block_height)
                     )

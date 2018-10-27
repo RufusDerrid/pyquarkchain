@@ -631,6 +631,7 @@ class MinorBlockMeta(Serializable):
         ("hash_merkle_root", hash256),
         ("hash_evm_state_root", hash256),
         ("hash_evm_receipt_root", hash256),
+        ("coinbase_address", Address),
         ("evm_gas_used", uint256),
         ("evm_cross_shard_receive_gas_used", uint256),
     ]
@@ -640,12 +641,14 @@ class MinorBlockMeta(Serializable):
         hash_merkle_root: bytes = bytes(Constant.HASH_LENGTH),
         hash_evm_state_root: bytes = bytes(Constant.HASH_LENGTH),
         hash_evm_receipt_root: bytes = bytes(Constant.HASH_LENGTH),
+        coinbase_address: Address = Address.create_empty_account(),
         evm_gas_used: int = 0,
         evm_cross_shard_receive_gas_used: int = 0,
     ):
         self.hash_merkle_root = hash_merkle_root
         self.hash_evm_state_root = hash_evm_state_root
         self.hash_evm_receipt_root = hash_evm_receipt_root
+        self.coinbase_address = coinbase_address
         self.evm_gas_used = evm_gas_used
         self.evm_cross_shard_receive_gas_used = evm_cross_shard_receive_gas_used
 
@@ -665,7 +668,6 @@ class MinorBlockHeader(Serializable):
         ("version", uint32),
         ("branch", Branch),
         ("height", uint64),
-        ("coinbase_address", Address),
         ("coinbase_amount", uint256),
         ("hash_prev_minor_block", hash256),
         ("hash_prev_root_block", hash256),
@@ -684,7 +686,6 @@ class MinorBlockHeader(Serializable):
         version: int = 0,
         height: int = 0,
         branch: Branch = Branch.create(1, 0),
-        coinbase_address: Address = Address.create_empty_account(),
         coinbase_amount: int = 0,
         hash_prev_minor_block: bytes = bytes(Constant.HASH_LENGTH),
         hash_prev_root_block: bytes = bytes(Constant.HASH_LENGTH),
@@ -700,7 +701,6 @@ class MinorBlockHeader(Serializable):
         self.version = version
         self.height = height
         self.branch = branch
-        self.coinbase_address = coinbase_address
         self.coinbase_amount = coinbase_amount
         self.hash_prev_minor_block = hash_prev_minor_block
         self.hash_prev_root_block = hash_prev_root_block
@@ -816,9 +816,9 @@ class MinorBlock(Serializable):
     ):
         if address is None:
             address = Address.create_empty_account(
-                full_shard_id=self.header.coinbase_address.full_shard_id
+                full_shard_id=self.meta.coinbase_address.full_shard_id
             )
-        meta = MinorBlockMeta()
+        meta = MinorBlockMeta(coinbase_address=address)
 
         create_time = (
             self.header.create_time + 1 if create_time is None else create_time
@@ -828,7 +828,6 @@ class MinorBlock(Serializable):
             version=self.header.version,
             height=self.header.height + 1,
             branch=self.header.branch,
-            coinbase_address=address,
             coinbase_amount=quarkash,
             hash_prev_minor_block=self.header.get_hash(),
             hash_prev_root_block=self.header.hash_prev_root_block,
@@ -926,7 +925,6 @@ class RootBlockHeader(Serializable):
             hash_prev_block=self.get_hash(),
             hash_merkle_root=bytes(32),
             coinbase_address=address if address else Address.create_empty_account(),
-            coinbase_amount=self.coinbase_amount,
             create_time=create_time,
             difficulty=difficulty,
             nonce=nonce,
@@ -987,14 +985,16 @@ class CrossShardTransactionDeposit(Serializable):
         ("to_address", Address),
         ("value", uint256),
         ("gas_price", uint256),
+        ("gas_token_id", uint256),
     ]
 
-    def __init__(self, tx_hash, from_address, to_address, value, gas_price):
+    def __init__(self, tx_hash, from_address, to_address, value, gas_price, gas_token_id):
         self.tx_hash = tx_hash
         self.from_address = from_address
         self.to_address = to_address
         self.value = value
         self.gas_price = gas_price
+        self.gas_token_id = gas_token_id
 
 
 class CrossShardTransactionList(Serializable):

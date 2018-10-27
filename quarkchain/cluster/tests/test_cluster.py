@@ -104,7 +104,7 @@ class TestCluster(unittest.TestCase):
                 originalBalanceAcc1 - 54321 - gasPaid,
             )
             self.assertEqual(
-                slaves[1].shards[Branch(3)].state.get_balance(acc3.recipient), 0
+                slaves[1].shards[Branch(3)].state.get_balance(acc3.recipient, 0), 0
             )
 
             # Expect to mine shard 1 due to proof-of-progress
@@ -131,7 +131,7 @@ class TestCluster(unittest.TestCase):
             self.assertTrue(master.root_state.add_block(block))
             slaves[1].shards[Branch(3)].state.add_root_block(block)
             self.assertEqual(
-                slaves[1].shards[Branch(3)].state.get_balance(acc3.recipient), 0
+                slaves[1].shards[Branch(3)].state.get_balance(acc3.recipient, 0), 0
             )
 
             # Expect to mine shard 1 for the gas on xshard tx to acc3

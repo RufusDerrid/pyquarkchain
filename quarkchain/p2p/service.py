@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 import asyncio
 import functools
 import logging
-import traceback
 from typing import Any, Awaitable, Callable, List, Optional, cast
 from weakref import WeakSet
 
@@ -55,9 +54,8 @@ class BaseService(ABC, CancellableMixin):
         self._executor = get_asyncio_executor()
 
     @property
-    def logger(self):
-        Logger.check_logger_set()
-        return Logger._qkc_logger
+    def logger(self) -> Logger:
+        return Logger
 
     def get_event_loop(self) -> asyncio.AbstractEventLoop:
         if self._loop is None:
@@ -126,17 +124,12 @@ class BaseService(ABC, CancellableMixin):
             except OperationCancelled:
                 pass
             except Exception as e:
-                self.logger.warning(
-                    "Task %s finished unexpectedly: %s" % (awaitable, e)
-                )
-                self.logger.debug(
-                    "Task failure traceback: {}".format(traceback.format_exc())
-                )
+                self.logger.warning("Task %s finished unexpectedly: %s" % (awaitable, e))
+                self.logger.debug("Task failure traceback")
             else:
                 self.logger.debug("Task %s finished with no errors" % awaitable)
 
         self._tasks.add(asyncio.ensure_future(_run_task_wrapper()))
-        self.gc()
 
     def run_daemon_task(self, awaitable: Awaitable[Any]) -> None:
         """Run the given awaitable in the background.
@@ -152,8 +145,8 @@ class BaseService(ABC, CancellableMixin):
             finally:
                 if not self.is_cancelled:
                     self.logger.debug(
-                        "%s finished while %s is still running, terminating as well"
-                        % (awaitable, self)
+                        "%s finished while %s is still running, terminating as well" %
+                        (awaitable, self)
                     )
                     self.cancel_token.trigger()
 
@@ -165,15 +158,11 @@ class BaseService(ABC, CancellableMixin):
         """
         if child_service.is_running:
             raise ValidationError(
-                "Can't start service {}, child of {}: it's already running".format(
-                    repr(child_service), repr(self)
-                )
+                "Can't start service {}, child of {}: it's already running".format(repr(child_service), repr(self))
             )
         elif child_service.is_cancelled:
             raise ValidationError(
-                "Can't restart {}, child of {}: it's already completed".format(
-                    repr(child_service), repr(self)
-                )
+                "Can't restart {}, child of {}: it's already completed".format(repr(child_service), repr(self))
             )
 
         self._child_services.add(child_service)
@@ -187,15 +176,11 @@ class BaseService(ABC, CancellableMixin):
         """
         if service.is_running:
             raise ValidationError(
-                "Can't start daemon {}, child of {}: it's already running".format(
-                    repr(service), repr(self)
-                )
+                "Can't start daemon {}, child of {}: it's already running".format(repr(service), repr(self))
             )
         elif service.is_cancelled:
             raise ValidationError(
-                "Can't restart daemon {}, child of {}: it's already completed".format(
-                    repr(service), repr(self)
-                )
+                "Can't restart daemon {}, child of {}: it's already completed".format(repr(service), repr(self))
             )
 
         self._child_services.add(service)
@@ -210,16 +195,12 @@ class BaseService(ABC, CancellableMixin):
                 self.logger.warning(
                     "Daemon Service %s finished unexpectedly: %s" % (service, e)
                 )
-                self.logger.debug(
-                    "Daemon Service failure traceback: {}".format(
-                        traceback.format_exc()
-                    )
-                )
+                self.logger.debug("Daemon Service failure traceback")
             finally:
                 if not self.is_cancelled:
                     self.logger.debug(
-                        "%s finished while %s is still running, terminating as well"
-                        % (service, self)
+                        "%s finished while %s is still running, terminating as well" %
+                        (service, self)
                     )
                     self.cancel_token.trigger()
 
@@ -290,7 +271,8 @@ class BaseService(ABC, CancellableMixin):
         except asyncio.futures.TimeoutError:
             self.logger.info(
                 "Timed out waiting for %s to finish its cleanup, forcibly cancelling pending "
-                "tasks and exiting anyway" % self
+                "tasks and exiting anyway" %
+                self,
             )
             if self._tasks:
                 self.logger.debug("Pending tasks: %s" % list(self._tasks))

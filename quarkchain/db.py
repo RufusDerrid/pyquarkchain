@@ -69,7 +69,7 @@ class PersistentDb(Db):
         options.write_buffer_size = 128 * 1024 * 1024  # 128 MiB
         options.max_write_buffer_number = 3
         options.target_file_size_base = 67108864
-        options.compression = rocksdb.CompressionType.lz4_compression
+        options.compression = rocksdb.CompressionType.snappy_compression
 
         self._db = rocksdb.DB(db_path, options)
 
