@@ -37,15 +37,14 @@ EXPOSE 22 80 443 38291 38391 38491 8000 29000
 ### set up code
 RUN mkdir /code
 WORKDIR /code
-RUN git clone https://github.com/RufusDerrid/quarkchain-multitoken.git
+RUN git clone https://github.com/RufusDerrid/pyquarkchain.git
 
-RUN pypy3 -m pip install -r quarkchain-multitoken/requirements.txt
+RUN pypy3 -m pip install -r pyquarkchain/requirements.txt
 # crypto lib issue
 # https://github.com/ethereum/pyethapp/issues/274#issuecomment-385268798
 RUN pypy3 -m pip uninstall -y pyelliptic
 RUN pypy3 -m pip install https://github.com/mfranciszkiewicz/pyelliptic/archive/1.5.10.tar.gz#egg=pyelliptic
 
-ENV PYTHONPATH /code/quarkchain-multitoken
+ENV PYTHONPATH /code/pyquarkchain
 
-CMD [ "pypy3", "quarkchain-multitoken/quarkchain/cluster/cluster.py", "--mine" ]
-
+CMD [ "pypy3", "pyquarkchain/quarkchain/cluster/cluster.py", "--mine" ]
